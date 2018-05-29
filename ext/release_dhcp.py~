@@ -1,0 +1,18 @@
+from scapy.all import *
+import random
+
+
+localiface = 'h1-eth0'
+broadcastMac = 'ff:ff:ff:ff:ff:ff'
+broadcastIp = '255.255.255.255'
+
+ethPk = Ether(src=fakeMac, dst=broadcastMac)
+ipPk = IP(src='0.0.0.0', dst= broadcastIp)
+udpPk = UDP(dport=67,sport=68)
+curXid = random.randint(0,10000)
+bootPk = BOOTP(chaddr = fakeRaw, xid = curXid)
+dhcpPk = DHCP(options=[('message-type', 'discover'), 'end'])
+discovery = ethPk/ipPk/udpPk/bootPk/dhcpPk
+            
+recvPk = srp1(discovery,iface=localiface)
+newIp = recvPk[BOOTP].yiaddr
