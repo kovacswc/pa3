@@ -37,7 +37,7 @@ class DHCPTopo(Topo):
         attacker = self.addHost("h1", ip='NULL')
         victim = self.addHost("h2", ip='NULL')
         bystander = self.addHost("h3", ip='NULL')
-        dhcpServer = self.addHost("h4", ip = "11.22.33.44")
+        dhcpServer = self.addHost("h4", ip = "11.22.33.44", mac = '00:11:22:33:44:55')
         
         self.addLink(soleSwitch, victim, delay = "5ms")
         self.addLink(soleSwitch, attacker, delay = "5ms")
@@ -75,10 +75,10 @@ def getVicIp(atk,vic):
     print "The interface is " + str(atk.defaultIntf())
 
     atkOut = atk.cmd('python create_dhcp.py', atkMac, vicIp,vic.MAC())
-    return
     print "THE OUTPUT OF TRYING TO STEAL DHCP IS: "
 
     print atkOut
+    return
     splitOut = atkOut.split('\n')
 
 
@@ -135,8 +135,7 @@ def experiment(net, testNum):
         print "Server's MAC is: " + dSer.MAC()
     
 
-    sleep(1)
-    
+    sleep(11)
     getVicIp(atk, vic)
     CLI(net)
 

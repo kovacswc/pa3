@@ -129,6 +129,7 @@ class LearningSwitch (object):
       Drops this packet and optionally installs a flow to continue
       dropping similar ones for a while
       """
+      print "Dropping a packet apparently"
       if duration is not None:
         if not isinstance(duration, tuple):
           duration = (duration,duration)
@@ -190,7 +191,10 @@ class LearningSwitch (object):
       else:
         outPort = self.macToPort[packet.dst]
       print "Coming in from " + str(inPort) + " and going out to " + str(outPort)
-          
+      print "Source MAC is: " + str(packet.src)
+      print "hwsrc is: " + str(packet.next.hwsrc)
+      print "Dest MAC is: " + str(packet.dst)
+      
     if packet.dst.is_multicast:
       flood() # 3a
     else:

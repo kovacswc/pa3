@@ -74,7 +74,7 @@ def getVicIp(atk,vic):
     print "The vic's IP is " + str(vic.IP())
     print "The interface is " + str(atk.defaultIntf())
 
-    atkOut = atk.sendCmd('python create_dhcp.py', atkMac, vicIp,vic.MAC())
+    atkOut = atk.cmd('python create_dhcp.py', atkMac, vicIp,vic.MAC())
     return
     print "THE OUTPUT OF TRYING TO STEAL DHCP IS: "
 
