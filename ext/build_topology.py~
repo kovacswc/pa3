@@ -26,10 +26,26 @@ class TestTopo(Topo):
         victim = self.addHost("h2", ip='NULL')
         bystander = self.addHost("h3", ip='NULL')
 
-        self.addLink(soleSwitch, victim)
-        self.addLink(soleSwitch, attacker)
+        self.addLink(soleSwitch, victim, delay = "5ms")
+        self.addLink(soleSwitch, attacker, delay = "5ms")
         self.addLink(soleSwitch, bystander)
 
+class DHCPTopo(Topo):
+    def build(self):
+
+        soleSwitch = self.addSwitch("s1")
+        attacker = self.addHost("h1", ip='NULL')
+        victim = self.addHost("h2", ip='NULL')
+        bystander = self.addHost("h3", ip='NULL')
+        dhcpServer = self.addHost("h4", ip = "11.22.33.44")
+        
+        self.addLink(soleSwitch, victim, delay = "5ms")
+        self.addLink(soleSwitch, attacker, delay = "5ms")
+        self.addLink(soleSwitch, bystander)
+        self.addLink(soleSwitch, dhcpServer)
+
+        
+        
 def startDHCP( host):
     hInt = host.defaultIntf()
     host.cmd('dhclient -v -d -r', hInt)
@@ -50,14 +66,16 @@ def waitForIp(host):
 def getVicIp(atk,vic):
     vicIp = vic.IP()
     atkMac = atk.MAC()
-
+    vicMac = vic.MAC()
 
     
     print "The attaker MAC is " + str(atk.MAC())
+    print "The vic's MAC is " + str(vic.MAC())
+    print "The vic's IP is " + str(vic.IP())
     print "The interface is " + str(atk.defaultIntf())
 
-    atkOut = atk.cmd('python create_dhcp.py', atkMac, vicIp)
-
+    atkOut = atk.sendCmd('python create_dhcp.py', atkMac, vicIp,vic.MAC())
+    return
     print "THE OUTPUT OF TRYING TO STEAL DHCP IS: "
 
     print atkOut
@@ -67,7 +85,7 @@ def getVicIp(atk,vic):
     #Make it easier to use it in mininet, abstracting away
     #how an attacker can set his own IP/MAC
     atk.setIP(splitOut[-3])
-    atk.setMAC(splitOut[-2])
+    atk.defaultIntf().setMAC(splitOut[-2])
     print atk.IP()
     print atk.MAC()
 
@@ -77,10 +95,23 @@ def tryRelease(atk, vic):
     relOut = atk.cmd('python release_dhcp.py', vicIp, vicMac)
     print relOut
     
-def experiment(net):
+def experiment(net, testNum):
     net.start()
 
+    if testNum == 3:
+        dhcpServer = net.get('h4')
+        #Don't forget to remind people to run "sudo apt install udhcpd"
+        print dhcpServer.cmd('udhcpd dhcp_server.config')
+        dhcpServer.setDefaultRoute(intf='h4-eth0')
+        
+    
     atk, vic, bystand = net.get('h1', 'h2', 'h3')
+
+    if testNum == 3:
+        atk.setDefaultRoute(intf='h1-eth0')
+        vic.setDefaultRoute(intf='h2-eth0')
+        bystand.setDefaultRoute(intf='h3-eth0')
+                
     info(atk, 'initial ip is ', atk.IP(), '\n')
     startDHCP(atk)
     waitForIp(atk)
@@ -92,25 +123,63 @@ def experiment(net):
     startDHCP(bystand)
     waitForIp(bystand)
 
+    
     info("Atk attempting to break Vic's IP-MAC binding\n")
+    
     tryRelease(atk, vic)
+
+    sleep(1)
+    #vic.cmd('dhclient -v -d -r', 'h2-eth0')
+    if testNum == 3:
+        dSer = net.get('h4')
+        print "Server's MAC is: " + dSer.MAC()
+    
 
     sleep(1)
     
     getVicIp(atk, vic)
+    CLI(net)
 
     #Some slight delay needed, otherwise thinks its the old IP?
-    sleep(1)
+    sleep(3)
 
+    print "Before pinging, the bystander sees:"
+    
     #h1 is unable to ping h2
+    print bystand.cmd("ping -c1 " + str(atk.IP()))
+    print bystand.cmd("arp")
+    
     net.pingAll()
+    print "After one set of pings: "
+    print bystand.cmd("arp")
+    sleep(5)
     net.pingAll()
+
+    print "The victim's MAC is " + str(vic.MAC()) + " IP is " + str(vic.IP())
+    print "The attacker's MAC is " + str(atk.MAC())
+    print " and advertising IP as " + str(atk.IP())
+    print "The bystander believes " + str(vic.IP()) + " is at "
+    print bystand.cmd("arp")
+    
     net.stop()
 
 def main():
-    topo = TestTopo()
+    test = 1
+    if len(sys.argv) > 1:
+        test = int(sys.argv[1])
 
-    pox_arguments = ['../../pox.py', 'forwarding.l2_learning', 'proto.dhcpd','--count=4']
+    topo = TestTopo()
+    pox_arguments = []
+    if test == 1:
+        pox_arguments = ['../../pox.py', 'forwarding.l2_learning',
+                         'proto.dhcpd','--count=4']
+    if test == 2:
+        pox_arguments = ['../../pox.py', 'forwarding.l2_learning', 'proto.dhcpd',
+                         '--count=4',"ext.arp_resp_dhcp" ]       
+
+    if test == 3:
+        topo = DHCPTopo()
+        pox_arguments = ['../../pox.py', 'forwarding.l2_learning']
     with open(os.devnull, "w") as fnull:
         pox_process = Popen(pox_arguments, stdout=fnull,
                             stderr=fnull, shell=False, close_fds=True)
@@ -118,7 +187,7 @@ def main():
     sleep(1)
     net = Mininet(topo = topo, host=CPULimitedHost, link = TCLink, controller=RemoteController)
     net.addController('pox', RemoteController, ip = '127.0.0.1', port = 6633)
-    experiment(net)
+    experiment(net, test)
     pox_process.send_signal(signal.SIGINT)
     pox_process.kill()
     

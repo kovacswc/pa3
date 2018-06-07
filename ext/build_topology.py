@@ -37,12 +37,14 @@ class DHCPTopo(Topo):
         attacker = self.addHost("h1", ip='NULL')
         victim = self.addHost("h2", ip='NULL')
         bystander = self.addHost("h3", ip='NULL')
-        dhcpServer = self.addHost("h4")
+        dhcpServer = self.addHost("h4", ip = "11.22.33.44")
         
         self.addLink(soleSwitch, victim, delay = "5ms")
         self.addLink(soleSwitch, attacker, delay = "5ms")
         self.addLink(soleSwitch, bystander)
         self.addLink(soleSwitch, dhcpServer)
+
+        
         
 def startDHCP( host):
     hInt = host.defaultIntf()
@@ -64,15 +66,16 @@ def waitForIp(host):
 def getVicIp(atk,vic):
     vicIp = vic.IP()
     atkMac = atk.MAC()
-
+    vicMac = vic.MAC()
 
     
     print "The attaker MAC is " + str(atk.MAC())
+    print "The vic's MAC is " + str(vic.MAC())
     print "The vic's IP is " + str(vic.IP())
     print "The interface is " + str(atk.defaultIntf())
 
-    atkOut = atk.cmd('python create_dhcp.py', atkMac, vicIp)
-
+    atkOut = atk.cmd('python create_dhcp.py', atkMac, vicIp,vic.MAC())
+    return
     print "THE OUTPUT OF TRYING TO STEAL DHCP IS: "
 
     print atkOut
@@ -98,10 +101,17 @@ def experiment(net, testNum):
     if testNum == 3:
         dhcpServer = net.get('h4')
         #Don't forget to remind people to run "sudo apt install udhcpd"
-        print dhcpServer.cmd('udhcpd')
-        return
+        print dhcpServer.cmd('udhcpd dhcp_server.config')
+        dhcpServer.setDefaultRoute(intf='h4-eth0')
+        
     
     atk, vic, bystand = net.get('h1', 'h2', 'h3')
+
+    if testNum == 3:
+        atk.setDefaultRoute(intf='h1-eth0')
+        vic.setDefaultRoute(intf='h2-eth0')
+        bystand.setDefaultRoute(intf='h3-eth0')
+                
     info(atk, 'initial ip is ', atk.IP(), '\n')
     startDHCP(atk)
     waitForIp(atk)
@@ -113,12 +123,22 @@ def experiment(net, testNum):
     startDHCP(bystand)
     waitForIp(bystand)
 
+    
     info("Atk attempting to break Vic's IP-MAC binding\n")
+    
     tryRelease(atk, vic)
+
+    sleep(1)
+    #vic.cmd('dhclient -v -d -r', 'h2-eth0')
+    if testNum == 3:
+        dSer = net.get('h4')
+        print "Server's MAC is: " + dSer.MAC()
+    
 
     sleep(1)
     
     getVicIp(atk, vic)
+    CLI(net)
 
     #Some slight delay needed, otherwise thinks its the old IP?
     sleep(3)
@@ -126,7 +146,7 @@ def experiment(net, testNum):
     print "Before pinging, the bystander sees:"
     
     #h1 is unable to ping h2
-    bystand.cmd("ping -c1 " + str(atk.IP()))
+    print bystand.cmd("ping -c1 " + str(atk.IP()))
     print bystand.cmd("arp")
     
     net.pingAll()
@@ -159,8 +179,7 @@ def main():
 
     if test == 3:
         topo = DHCPTopo()
-        pox_arguments = ['../../pox.py', 'forwarding.l2_learning',
-                         'proto.dhcpd','--count=4']
+        pox_arguments = ['../../pox.py', 'forwarding.l2_learning']
     with open(os.devnull, "w") as fnull:
         pox_process = Popen(pox_arguments, stdout=fnull,
                             stderr=fnull, shell=False, close_fds=True)
