@@ -1,9 +1,0 @@
-# The stand end of the IP lease block
-
-start 	    192.168.0.20
-end	    192.168.0.30
-
-#h4 should be the dhcp server
-interface   h4-eth0
-
-max_leases  20
