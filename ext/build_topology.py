@@ -45,7 +45,6 @@ class DHCPTopo(Topo):
         self.addLink(soleSwitch, dhcpServer)
 
         
-        
 def startDHCP( host):
     hInt = host.defaultIntf()
     host.cmd('dhclient -v -d -r', hInt)
@@ -63,7 +62,7 @@ def waitForIp(host):
     info('*', host, 'is now usign', host.cmd('grep nameserver /etc/resolv.conf'))
     info(host, 'is now using IP', host.IP(), '\n')
         
-def getVicIp(atk,vic):
+def getVicIp(atk,vic, testNum):
     vicIp = vic.IP()
     atkMac = atk.MAC()
     vicMac = vic.MAC()
@@ -74,25 +73,26 @@ def getVicIp(atk,vic):
     print "The vic's IP is " + str(vic.IP())
     print "The interface is " + str(atk.defaultIntf())
 
-    atkOut = atk.cmd('python create_dhcp.py', atkMac, vicIp,vic.MAC())
+    atkOut = atk.cmd('python create_dhcp.py', atkMac, vicIp,vic.MAC(), testNum)
     print "THE OUTPUT OF TRYING TO STEAL DHCP IS: "
 
     print atkOut
-    return
     splitOut = atkOut.split('\n')
-
+    return
 
     #Make it easier to use it in mininet, abstracting away
-    #how an attacker can set his own IP/MAC
+    #how an attacker can set his own IP/MAC; NOt doing this
+    #For better visibility with ping results; mostly due to
+    #confusion with how MAC is being handled
     atk.setIP(splitOut[-3])
     atk.defaultIntf().setMAC(splitOut[-2])
     print atk.IP()
     print atk.MAC()
 
-def tryRelease(atk, vic):
+def tryRelease(atk, vic,test):
     vicIp = vic.IP()
     vicMac = vic.MAC()
-    relOut = atk.cmd('python release_dhcp.py', vicIp, vicMac)
+    relOut = atk.cmd('python release_dhcp.py', vicIp, vicMac, test)
     print relOut
     
 def experiment(net, testNum):
@@ -125,32 +125,38 @@ def experiment(net, testNum):
 
     
     info("Atk attempting to break Vic's IP-MAC binding\n")
-    
-    tryRelease(atk, vic)
+    start = time()
+    tryRelease(atk, vic, testNum)
 
     sleep(1)
-    #vic.cmd('dhclient -v -d -r', 'h2-eth0')
     if testNum == 3:
         dSer = net.get('h4')
         print "Server's MAC is: " + dSer.MAC()
     
 
+    #Sleep to get past soft timeout of flows
     sleep(11)
-    getVicIp(atk, vic)
-    CLI(net)
+    getVicIp(atk, vic, testNum)
 
+    end = time()
+    
     #Some slight delay needed, otherwise thinks its the old IP?
-    sleep(3)
+    sleep(15)
 
+    print "Attacker's ARP:"
+    print atk.cmd("arp")
+    print "Vic's ARP: "
+    print vic.cmd("arp")
+    atk.cmd("arp -d ",vic.IP())
     print "Before pinging, the bystander sees:"
     
     #h1 is unable to ping h2
-    print bystand.cmd("ping -c1 " + str(atk.IP()))
+    print bystand.cmd("ping -c1 " + str(vic.IP()))
     print bystand.cmd("arp")
-    
+
     net.pingAll()
-    print "After one set of pings: "
-    print bystand.cmd("arp")
+    #print "After one set of pings: "
+    #print bystand.cmd("arp")
     sleep(5)
     net.pingAll()
 
@@ -159,7 +165,8 @@ def experiment(net, testNum):
     print " and advertising IP as " + str(atk.IP())
     print "The bystander believes " + str(vic.IP()) + " is at "
     print bystand.cmd("arp")
-    
+    print "The attack (not setup or testing with pings) took " + str(end-start)
+    print "\n"
     net.stop()
 
 def main():
@@ -169,16 +176,25 @@ def main():
 
     topo = TestTopo()
     pox_arguments = []
+
+    #Test 1 demonstrates how by itself, it doesn't do much
     if test == 1:
         pox_arguments = ['../../pox.py', 'forwarding.l2_learning',
                          'proto.dhcpd','--count=4']
+    #Test 2 demonstrates how adding proxy arp that learns with dhcp does affect it
     if test == 2:
         pox_arguments = ['../../pox.py', 'forwarding.l2_learning', 'proto.dhcpd',
                          '--count=4',"ext.arp_resp_dhcp" ]       
-
+    if test == -1:
+        pox_arguments = ['../../pox.py', 'ext.l2_sniff_dhcp', 'proto.dhcpd',
+                         '--count=4' ]       
+        
+    #Test 3 uses an external DHCP server to demonstrate flow poisoning. Uses
+    #routes learned from DHCP messages
     if test == 3:
         topo = DHCPTopo()
-        pox_arguments = ['../../pox.py', 'forwarding.l2_learning']
+        pox_arguments = ['../../pox.py', 'ext.l2_sniff_dhcp']
+    print "Runnnig test " + str(test)
     with open(os.devnull, "w") as fnull:
         pox_process = Popen(pox_arguments, stdout=fnull,
                             stderr=fnull, shell=False, close_fds=True)

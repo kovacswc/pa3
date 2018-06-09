@@ -280,7 +280,7 @@ def update_dhcp (event):
   print "The MAC is: " + str(event.host_mac)
   print "THe IP is: " + str(event.ip)
   #To add to the table, simple do:
-  _arp_table[event.ip] = Entry(event.host_mac, static=False)
+  _arp_table[event.ip] = Entry(event.host_mac, static=True)
 
 
 _arp_table = ARPTable() # IPAddr -> Entry

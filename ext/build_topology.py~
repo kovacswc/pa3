@@ -37,14 +37,13 @@ class DHCPTopo(Topo):
         attacker = self.addHost("h1", ip='NULL')
         victim = self.addHost("h2", ip='NULL')
         bystander = self.addHost("h3", ip='NULL')
-        dhcpServer = self.addHost("h4", ip = "11.22.33.44")
+        dhcpServer = self.addHost("h4", ip = "11.22.33.44", mac = '00:11:22:33:44:55')
         
         self.addLink(soleSwitch, victim, delay = "5ms")
         self.addLink(soleSwitch, attacker, delay = "5ms")
         self.addLink(soleSwitch, bystander)
         self.addLink(soleSwitch, dhcpServer)
 
-        
         
 def startDHCP( host):
     hInt = host.defaultIntf()
@@ -75,12 +74,11 @@ def getVicIp(atk,vic):
     print "The interface is " + str(atk.defaultIntf())
 
     atkOut = atk.cmd('python create_dhcp.py', atkMac, vicIp,vic.MAC())
-    return
     print "THE OUTPUT OF TRYING TO STEAL DHCP IS: "
 
     print atkOut
     splitOut = atkOut.split('\n')
-
+    return
 
     #Make it easier to use it in mininet, abstracting away
     #how an attacker can set his own IP/MAC
@@ -89,10 +87,10 @@ def getVicIp(atk,vic):
     print atk.IP()
     print atk.MAC()
 
-def tryRelease(atk, vic):
+def tryRelease(atk, vic,test):
     vicIp = vic.IP()
     vicMac = vic.MAC()
-    relOut = atk.cmd('python release_dhcp.py', vicIp, vicMac)
+    relOut = atk.cmd('python release_dhcp.py', vicIp, vicMac, test)
     print relOut
     
 def experiment(net, testNum):
@@ -125,8 +123,8 @@ def experiment(net, testNum):
 
     
     info("Atk attempting to break Vic's IP-MAC binding\n")
-    
-    tryRelease(atk, vic)
+    start = time()
+    tryRelease(atk, vic, testNum)
 
     sleep(1)
     #vic.cmd('dhclient -v -d -r', 'h2-eth0')
@@ -135,13 +133,14 @@ def experiment(net, testNum):
         print "Server's MAC is: " + dSer.MAC()
     
 
-    sleep(1)
-    
+    #Sleep to get past soft timeout of flows
+    sleep(11)
     getVicIp(atk, vic)
-    CLI(net)
 
+    end = time()
+    
     #Some slight delay needed, otherwise thinks its the old IP?
-    sleep(3)
+    sleep(11)
 
     print "Before pinging, the bystander sees:"
     
@@ -150,8 +149,8 @@ def experiment(net, testNum):
     print bystand.cmd("arp")
     
     net.pingAll()
-    print "After one set of pings: "
-    print bystand.cmd("arp")
+    #print "After one set of pings: "
+    #print bystand.cmd("arp")
     sleep(5)
     net.pingAll()
 
@@ -160,7 +159,8 @@ def experiment(net, testNum):
     print " and advertising IP as " + str(atk.IP())
     print "The bystander believes " + str(vic.IP()) + " is at "
     print bystand.cmd("arp")
-    
+    print "The attack (not setup or testing with pings) took " + str(end-start)
+    print "\n"
     net.stop()
 
 def main():
@@ -170,16 +170,25 @@ def main():
 
     topo = TestTopo()
     pox_arguments = []
+
+    #Test 1 demonstrates how by itself, it doesn't do much
     if test == 1:
         pox_arguments = ['../../pox.py', 'forwarding.l2_learning',
                          'proto.dhcpd','--count=4']
+    #Test 2 demonstrates how adding proxy arp that learns with dhcp does affect it
     if test == 2:
         pox_arguments = ['../../pox.py', 'forwarding.l2_learning', 'proto.dhcpd',
                          '--count=4',"ext.arp_resp_dhcp" ]       
-
+    if test == -1:
+        pox_arguments = ['../../pox.py', 'ext.l2_sniff_dhcp', 'proto.dhcpd',
+                         '--count=4' ]       
+        
+    #Test 3 uses an external DHCP server to demonstrate flow poisoning. Uses
+    #routes learned from DHCP messages
     if test == 3:
         topo = DHCPTopo()
-        pox_arguments = ['../../pox.py', 'forwarding.l2_learning']
+        pox_arguments = ['../../pox.py', 'ext.l2_sniff_dhcp']
+    print "Runnnig test " + str(test)
     with open(os.devnull, "w") as fnull:
         pox_process = Popen(pox_arguments, stdout=fnull,
                             stderr=fnull, shell=False, close_fds=True)

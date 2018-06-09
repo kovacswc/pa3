@@ -41,7 +41,7 @@ def arpDHCP(servIp):
     recvPk = srp1(fullArp)
     return recvPk[Ether].src
 
-def getDHCP(localMac, ipToTake, vicMac):
+def getDHCP(localMac, ipToTake, vicMac, testNum):
 
     newIp = ''
     count = 0
@@ -78,9 +78,10 @@ def getDHCP(localMac, ipToTake, vicMac):
         #if servMac != '00:11:22:33:44:55':
         #    servMac = arpDHCP(servIp)
         #    sleep(12)
- #       sendPingToVic(servMac, vicMac, ipToTake, servIp)
+        #     sendPingToVic(servMac, vicMac, ipToTake, servIp)
+
         sendArpToVic('00:11:22:33:44:55', vicMac, ipToTake, servIp)
-        recvPk = srp1(discovery,iface=localiface, timeout=5)
+        recvPk = srp1(discovery,iface=localiface)
         if not recvPk:
             return (0,0,0,0,0)
 
@@ -102,37 +103,36 @@ def getDHCP(localMac, ipToTake, vicMac):
     print fakeMac
         
     servIp = recvPk[BOOTP].siaddr
-    servMac = recvPk[ETHER].src
     for i in range(len(recvPk[DHCP].options)):
         if recvPk[DHCP].options[i][0] == "server_id":
             servIp = recvPk[DHCP].options[i][1]
     
-    return (fakeMac, servIp, fakeRaw, curXid, newIp, servMac)
+    return (fakeMac, servIp, fakeRaw, curXid, newIp)
 
 def main():
     conf.checkIPaddr = False
     localMac = sys.argv[1]
     ipToTake = sys.argv[2]
     vicMac = sys.argv[3]
-    fakeMac, servIp, fakeRaw, curXid, newIp = getDHCP(localMac, ipToTake, vicMac)
+    testNum = sys.argv[4]
+    fakeMac, servIp, fakeRaw, curXid, newIp = getDHCP(localMac, ipToTake, vicMac, testNum)
     print newIp
     print fakeMac
-    return
 
-#Request for the DHCP addr; currently blocking when testing with udhcpd
-#ethPk = Ether(src=fakeMac, dst = 'ff:ff:ff:ff:ff:ff')
-#ppipPk = IP(src = "0.0.0.0", dst = "255.255.255.255")
-#udpPk = UDP(dport=67, sport=68)
-#bootPk = BOOTP(chaddr = fakeRaw, xid=curXid)
-#requestPk = DHCP(options=[("message-type", "request"),
-#                        ("server_id",servIp), ("requested_addr", newIp), "end"])
-#
-#fullReq = ethPk/ipPk/udpPk/bootPk/requestPk
+    #Request for the DHCP addr; currently blocking when testing with udhcpd
+    ethPk = Ether(src=fakeMac, dst = 'ff:ff:ff:ff:ff:ff')
+    ipPk = IP(src = "0.0.0.0", dst = "255.255.255.255")
+    udpPk = UDP(dport=67, sport=68)
+    bootPk = BOOTP(chaddr = fakeRaw, xid=curXid)
+    requestPk = DHCP(options=[("message-type", "request"),
+                          ("server_id",servIp), ("requested_addr", newIp), "end"])
 
-#recvPk = srp1(fullReq, iface=localiface)
+    fullReq = ethPk/ipPk/udpPk/bootPk/requestPk
 
-#print newIp
-#print fakeMac
+    recvPk = srp1(fullReq, iface=localiface)
+
+    print newIp
+    print fakeMac
 
 
 if __name__ == "__main__":

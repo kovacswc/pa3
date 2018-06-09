@@ -36,6 +36,7 @@ from pox.lib.addresses import IPAddr, EthAddr
 from pox.lib.util import dpid_to_str, str_to_bool
 from pox.lib.recoco import Timer
 from pox.lib.revent import EventHalt
+import pox.lib.packet as pkt
 
 import pox.openflow.libopenflow_01 as of
 
@@ -55,7 +56,7 @@ class Entry (object):
   def __init__ (self, mac, static = None, flood = None):
     self.timeout = time.time() + ARP_TIMEOUT
     self.static = False
-    self.flood = True
+    self.flood = False #UPDATED SO WHEN REMOVE ENTRY, DOESNT READD IT
     if mac is True:
       # Means use switch's MAC, implies static/noflood
       self.mac = True
@@ -169,6 +170,25 @@ class ARPResponder (object):
       log.warning("%s: ignoring unparsed packet", dpid_to_str(dpid))
       return
 
+    #UPDATE ARP TABLE BASED ON DHCP
+    checkD = packet.find('ipv4')
+    if checkD:
+      cD = checkD.payload
+      if cD.srcport == pkt.dhcp.CLIENT_PORT or cD.srcport == pkt.dhcp.SERVER_PORT:
+        bootPk = cD.payload
+        dhcpOpt = bootPk.options.get(bootPk.MSG_TYPE_OPT)
+        print "FOUND A DHCP PACKET; LOOKIE THERE, with option: " + str(dhcpOpt)
+        if dhcpOpt.type == 5:
+          _arp_table[bootPk.yiaddr] = Entry(packet.dst, static=False)
+        elif dhcpOpt.type == 7:
+          print "Looking to release" + str(bootPk.ciaddr)
+          for k, v in _arp_table.iteritems():
+            print k, v
+
+          if bootPk.ciaddr in _arp_table:
+            print "Let's get rid of the IP-MAC binding for " + str(bootPk.ciaddr)
+            del _arp_table[bootPk.ciaddr]
+          
     a = packet.find('arp')
     if not a: return
 
@@ -296,8 +316,6 @@ def launch (timeout=ARP_TIMEOUT, no_flow=False, eat_packets=True,
   _install_flow = not no_flow
   _eat_packets = str_to_bool(eat_packets)
   _learn = not no_learn
-
-  core.DHCPD.addListenerByName('DHCPLease', update_dhcp)
   
   core.Interactive.variables['arp'] = _arp_table
   for k,v in kw.iteritems():

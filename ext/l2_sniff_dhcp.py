@@ -82,7 +82,7 @@ class LearningSwitch (object):
 
     # Our table
     self.macToPort = {}
-
+    self.ipToPort = {}
     # We want to hear PacketIn messages, so we listen
     # to the connection
     connection.addListeners(self)
@@ -170,9 +170,14 @@ class LearningSwitch (object):
         print "Got dhcp: " + str(dhcpOpt.type)
         print "Source MAC: " + str(packet.src)
         print "DHCP Dest IP: "  + str(bootPk.yiaddr)
+        print "Src Mac 1: " + str(packet.dst)
+        print "Src Mac 2: " + str(bootPk.chaddr)
         if sId:
           print "Server id: " + str(sId)
-                                 
+        if dhcpOpt.type == 5:
+          self.ipToPort[bootPk.yiaddr] = self.macToPort[bootPk.chaddr]
+        if dhcpOpt.type == 7 and ipp.dstip in self.ipToPort:
+          del self.ipToPort[ipp.dstip]
       else:
         checkA = packet.next
         print "Why have I arrived here?"
@@ -198,7 +203,20 @@ class LearningSwitch (object):
     if packet.dst.is_multicast:
       flood() # 3a
     else:
-      if packet.dst not in self.macToPort: # 4
+      ipp = packet.find('ipv4')
+      if ipp and ipp.dstip in self.ipToPort:
+        print "Using IP address to route"
+        port = self.ipToPort[ipp.dstip]
+        msg = of.ofp_flow_mod()
+        msg.match = of.ofp_match.from_packet(packet, event.port)
+        msg.idle_timeout = 10
+        msg.hard_timeout = 30
+        msg.actions.append(of.ofp_action_output(port = port))
+        msg.data = event.ofp # 6a
+        self.connection.send(msg)
+
+      
+      elif packet.dst not in self.macToPort: # 4
         flood("Port for %s unknown -- flooding" % (packet.dst,)) # 4a
       else:
         port = self.macToPort[packet.dst]
